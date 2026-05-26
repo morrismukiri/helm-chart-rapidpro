@@ -40,10 +40,12 @@ securityContext:
   capabilities:
     drop: ["ALL"]
 
-# Relaxed context for the prebuilt Go binaries (run as their own non-root image
-# user; local write needs are not fully known, so no read-only root FS).
+# Relaxed context for the prebuilt Go binaries (non-root uid 1000 baked in the
+# image; local write needs are not fully known, so no read-only root FS).
 goSecurityContext:
   runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]

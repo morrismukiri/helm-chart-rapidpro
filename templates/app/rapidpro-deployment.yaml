@@ -55,13 +55,21 @@ spec:
             - { name: tmp, mountPath: /tmp }
             - { name: dshm, mountPath: /dev/shm }
           readinessProbe:
-            httpGet: { path: /, port: http }
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - { name: Host, value: {{ .Values.rapidproDomain | quote }} }
             initialDelaySeconds: 20
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
           livenessProbe:
-            httpGet: { path: /, port: http }
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - { name: Host, value: {{ .Values.rapidproDomain | quote }} }
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5
