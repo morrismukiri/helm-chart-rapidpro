@@ -205,6 +205,20 @@ Create smtp url from values
 {{- end -}}
 {{- end }}
 
+{{/* S3 endpoint for the Go services. Explicit awsS3Endpoint wins (MinIO); else
+     a region-correct AWS endpoint so signing matches the bucket's region. The Go
+     binaries otherwise default to https://s3.amazonaws.com, which 400s outside
+     us-east-1 (AuthorizationHeaderMalformed). */}}
+{{- define "rapidpro.s3Endpoint" -}}
+{{- if .Values.awsS3Endpoint -}}
+{{- .Values.awsS3Endpoint -}}
+{{- else if .Values.awsS3RegionName -}}
+{{- printf "https://s3.%s.amazonaws.com" .Values.awsS3RegionName -}}
+{{- else -}}
+{{- "https://s3.amazonaws.com" -}}
+{{- end -}}
+{{- end }}
+
 {{/* Broker image (redis or valkey) for the hand-rolled dev/staging broker. */}}
 {{- define "rapidpro.brokerImage" -}}
 {{- if eq (.Values.broker.engine | default "redis") "valkey" -}}
