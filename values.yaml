@@ -333,8 +333,11 @@ minio:
     requests: { cpu: 50m, memory: 256Mi }
     limits: { memory: 1Gi }
 
-# Optional Prometheus ServiceMonitor + NetworkPolicy (off by default).
-metrics:
-  serviceMonitor: { enabled: false }
+# Optional NetworkPolicy (off by default). When enabled, ingress to chart pods is
+# restricted to the same namespace plus any namespaces matching
+# ingressNamespaceLabels (e.g. the ingress controller); egress is left open so
+# the app can reach S3 / SMTP / channel APIs / DNS.
 networkPolicy:
   enabled: false
+  ingressNamespaceLabels: {}   # e.g. { kubernetes.io/metadata.name: ingress-nginx }
+  allowExternalEgress: true

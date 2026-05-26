@@ -1,0 +1,36 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "rapidpro.fullname" . }}
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+spec:
+  # Applies to every pod in this release (app, celery, mailroom, courier, deps).
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    {{- if not .Values.networkPolicy.allowExternalEgress }}
+    - Egress
+    {{- end }}
+  ingress:
+    - from:
+        # same namespace
+        - podSelector: {}
+        {{- with .Values.networkPolicy.ingressNamespaceLabels }}
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+        {{- end }}
+  {{- if not .Values.networkPolicy.allowExternalEgress }}
+  egress:
+    # DNS + same-namespace only when external egress is disabled.
+    - to:
+        - podSelector: {}
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+  {{- end }}
+{{- end }}

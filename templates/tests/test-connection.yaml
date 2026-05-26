@@ -6,14 +6,21 @@ metadata:
     {{- include "rapidpro.labels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
-  containers:
-    - name: test-app
-      image: busybox
-      command: ['wget']
-      args: ['{{ include "rapidpro.fullname" . }}:{{ .Values.rapidpro.service.targetPort  }}']
-    - name: test-mailroom
-      image: busybox
-      command: ['wget']
-      args: ['{{ include "rapidpro.fullname" . }}:{{ .Values.mailroom.service.targetPort  }}']
   restartPolicy: Never
+  containers:
+    - name: smoke
+      image: curlimages/curl:8.11.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          echo "app login page (with Host header for ALLOWED_HOSTS)"
+          curl -fsS -H "Host: {{ .Values.rapidproDomain }}" \
+            "http://{{ include "rapidpro.fullname" . }}-app:{{ .Values.rapidpro.service.targetPort }}/users/login/" >/dev/null
+          echo "courier health"
+          curl -fsS "http://{{ include "rapidpro.fullname" . }}-courier:{{ .Values.courier.service.port }}/" >/dev/null
+          echo "mailroom health"
+          curl -fsS "http://{{ include "rapidpro.fullname" . }}-mailroom:{{ .Values.mailroom.service.port }}/" >/dev/null
+          echo "ALL OK"
