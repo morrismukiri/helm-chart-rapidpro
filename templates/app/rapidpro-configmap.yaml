@@ -7,7 +7,7 @@ metadata:
 data:
   DOMAIN_NAME: {{ .Values.rapidproDomain | quote }}
   TEMBA_HOST: {{ .Values.rapidproDomain | quote }}
-  ALLOWED_HOSTS: {{ .Values.rapidproDomain | quote }}
+  ALLOWED_HOSTS: {{ .Values.allowedHosts | default .Values.rapidproDomain | quote }}
   {{- with .Values.csrfTrustedOrigins }}
   CSRF_TRUSTED_ORIGINS: {{ . | quote }}
   {{- end }}

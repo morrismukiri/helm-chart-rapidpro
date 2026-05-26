@@ -9,6 +9,9 @@ replicaCount: 1
 # Shared configuration (rendered into the app ConfigMap/Secret)
 # ---------------------------------------------------------------------------
 rapidproDomain: "rapidpro.local"
+# Optional override for Django ALLOWED_HOSTS (semicolon-separated). Empty =>
+# defaults to rapidproDomain. Add localhost here to allow kubectl port-forward.
+allowedHosts: ""
 # Optional explicit CSRF trusted origins (semicolon-separated, scheme-qualified).
 # Empty => the app derives https://<host> + http://<host> from ALLOWED_HOSTS.
 csrfTrustedOrigins: ""
