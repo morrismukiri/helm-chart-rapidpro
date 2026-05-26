@@ -344,3 +344,9 @@ networkPolicy:
   enabled: false
   ingressNamespaceLabels: {}   # e.g. { kubernetes.io/metadata.name: ingress-nginx }
   allowExternalEgress: true
+
+# Optional branding overlays mounted into the app via subPath (no image rebuild).
+# Each file: { key, mountPath, content }. e.g. replace images/logo-dark.svg or a template.
+branding:
+  enabled: false
+  files: []

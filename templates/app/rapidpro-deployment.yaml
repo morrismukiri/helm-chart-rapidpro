@@ -58,6 +58,14 @@ spec:
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
             - { name: dshm, mountPath: /dev/shm }
+            {{- if .Values.branding.enabled }}
+            {{- range .Values.branding.files }}
+            - name: branding
+              mountPath: {{ .mountPath }}
+              subPath: {{ .key }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /
@@ -83,6 +91,11 @@ spec:
       volumes:
         - { name: tmp, emptyDir: {} }
         - { name: dshm, emptyDir: { medium: Memory } }
+        {{- if .Values.branding.enabled }}
+        - name: branding
+          configMap:
+            name: {{ include "rapidpro.fullname" . }}-branding
+        {{- end }}
       {{- with .Values.rapidpro.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
