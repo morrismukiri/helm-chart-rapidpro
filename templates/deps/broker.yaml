@@ -1,0 +1,81 @@
+{{- if .Values.redis.enabled }}
+{{- /* Hand-rolled broker/cache (redis OR valkey via broker.engine). Dev/staging. */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rapidpro.brokerService" . }}
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: broker
+spec:
+  type: {{ .Values.redis.service.type | default "ClusterIP" }}
+  ports:
+    - { name: redis, port: {{ .Values.redis.service.port | default 6379 }}, targetPort: redis }
+  selector:
+    {{- include "rapidpro.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: broker
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.brokerService" . }}
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: broker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: broker
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: broker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: broker
+          image: {{ include "rapidpro.brokerImage" . | quote }}
+          ports:
+            - { name: redis, containerPort: 6379 }
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.broker.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          {{- if .Values.broker.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "rapidpro.brokerService" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- if .Values.broker.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rapidpro.brokerService" . }}
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.broker.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.broker.persistence.size | default "8Gi" }}
+{{- end }}
+{{- end }}

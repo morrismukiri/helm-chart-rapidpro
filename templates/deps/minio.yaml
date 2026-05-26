@@ -1,0 +1,111 @@
+{{- if .Values.minio.enabled }}
+{{- /* In-cluster S3 for local/dev. Point the app's AWS_S3_ENDPOINT_URL at this
+       service and use rootUser/rootPassword as the AWS creds. */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-minio
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  ports:
+    - { name: s3, port: {{ .Values.minio.service.port | default 9000 }}, targetPort: s3 }
+  selector:
+    {{- include "rapidpro.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-minio
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      containers:
+        - name: minio
+          image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - { name: MINIO_ROOT_USER, value: {{ .Values.minio.rootUser | quote }} }
+            - { name: MINIO_ROOT_PASSWORD, value: {{ .Values.minio.rootPassword | quote }} }
+          ports:
+            - { name: s3, containerPort: 9000 }
+            - { name: console, containerPort: 9001 }
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: s3 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.minio.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - name: data
+          {{- if .Values.minio.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "rapidpro.fullname" . }}-minio
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- if .Values.minio.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-minio
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.minio.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.minio.persistence.size | default "10Gi" }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-minio-mb
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio-mb
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until mc alias set local http://{{ include "rapidpro.fullname" . }}-minio:{{ .Values.minio.service.port | default 9000 }} {{ .Values.minio.rootUser }} {{ .Values.minio.rootPassword }} 2>/dev/null; do echo waiting for minio; sleep 2; done
+              mc mb -p local/{{ .Values.minio.defaultBucket }} || true
+              mc anonymous set download local/{{ .Values.minio.defaultBucket }} || true
+{{- end }}

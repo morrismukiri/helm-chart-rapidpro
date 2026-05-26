@@ -3,36 +3,37 @@ kind: Deployment
 metadata:
   name: {{ include "rapidpro.fullname" . }}-indexer
   labels:
+    app.kubernetes.io/component: indexer
     {{- include "indexer.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.indexer.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
-  {{- end }}
+  replicas: {{ .Values.indexer.replicas | default 1 }}
   selector:
     matchLabels:
+      app.kubernetes.io/component: indexer
       {{- include "indexer.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      labels:
+        app.kubernetes.io/component: indexer
+        {{- include "indexer.selectorLabels" . | nindent 8 }}
       {{- with .Values.indexer.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      labels:
-        {{- include "indexer.selectorLabels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
       {{- with .Values.indexer.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.indexer.podSecurityContext | nindent 8 }}
       containers:
         - name: {{ .Chart.Name }}-indexer
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.indexer.image.repository }}:{{ .Values.indexer.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.indexer.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.goSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: {{ include "rapidpro.fullname" . }}-indexer-config
@@ -44,11 +45,11 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.indexer.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.indexer.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.indexer.affinity }}
+      affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}

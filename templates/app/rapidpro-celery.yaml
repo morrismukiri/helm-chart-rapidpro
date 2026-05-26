@@ -1,0 +1,226 @@
+{{- $root := . -}}
+{{- $img := printf "%s:%s" .Values.rapidpro.image.repository (.Values.rapidpro.image.tag | default .Chart.AppVersion) -}}
+{{/*
+Celery worker pools: one Deployment (+ HPA + PDB) per entry in .Values.celery.workers.
+Queue isolation keeps heavy exports off the default queue so light tasks never block.
+*/}}
+{{- range $w := .Values.celery.workers }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  labels:
+    {{- include "rapidpro.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: celery-{{ $w.name }}
+spec:
+  {{- if not $w.autoscaling.enabled }}
+  replicas: {{ $w.replicas | default $root.Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: celery-{{ $w.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" $root | nindent 8 }}
+        app.kubernetes.io/component: celery-{{ $w.name }}
+      {{- with $root.Values.rapidpro.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" $root }}
+      {{- with $root.Values.rapidpro.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $root.Values.rapidpro.podSecurityContext | nindent 8 }}
+      containers:
+        - name: celery-{{ $w.name }}
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ $root.Values.rapidpro.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $root.Values.securityContext | nindent 12 }}
+          command: ["celery"]
+          args:
+            - "-A"
+            - "temba"
+            - "worker"
+            - "-Q"
+            - {{ $w.queues | quote }}
+            - "--concurrency"
+            - {{ $w.concurrency | default 4 | quote }}
+            - "-n"
+            - "{{ $w.name }}@%h"
+            - "--max-tasks-per-child"
+            - {{ $w.maxTasksPerChild | default 100 | quote }}
+            - "--loglevel"
+            - "INFO"
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" $root }}-app-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" $root }}-app-secrets
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: dshm, mountPath: /dev/shm }
+          livenessProbe:
+            exec:
+              command:
+                - "sh"
+                - "-c"
+                - "celery -A temba inspect ping -d {{ $w.name }}@$(cat /etc/hostname) --timeout 10 | grep -q OK"
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml $w.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: dshm, emptyDir: { medium: Memory } }
+      {{- with $w.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $w.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $w.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if and $w.autoscaling $w.autoscaling.enabled (not (and $w.keda $w.keda.enabled)) }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  labels:
+    {{- include "rapidpro.labels" $root | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  minReplicas: {{ $w.autoscaling.minReplicas }}
+  maxReplicas: {{ $w.autoscaling.maxReplicas }}
+  metrics:
+    {{- if $w.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $w.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if $w.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $w.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+{{- if and $w.keda $w.keda.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  labels:
+    {{- include "rapidpro.labels" $root | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  minReplicaCount: {{ $w.autoscaling.minReplicas | default 1 }}
+  maxReplicaCount: {{ $w.autoscaling.maxReplicas | default 6 }}
+  triggers:
+    - type: redis
+      metadata:
+        addressFromEnv: REDIS_URL
+        listName: {{ $w.keda.listName | default $w.queues | quote }}
+        listLength: {{ $w.keda.listLength | default 5 | quote }}
+{{- end }}
+{{- if and $w.pdb $w.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rapidpro.fullname" $root }}-celery-{{ $w.name }}
+  labels:
+    {{- include "rapidpro.labels" $root | nindent 4 }}
+spec:
+  minAvailable: {{ $w.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" $root | nindent 6 }}
+      app.kubernetes.io/component: celery-{{ $w.name }}
+{{- end }}
+{{- end }}
+---
+# Singleton beat scheduler (replicas: 1, no HPA) — fixes the multi-beat defect.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-celery-beat
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-beat
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-beat
+    spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
+      {{- with .Values.rapidpro.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.rapidpro.podSecurityContext | nindent 8 }}
+      containers:
+        - name: celery-beat
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.rapidpro.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command: ["celery"]
+          args: ["-A", "temba", "beat", "--loglevel", "info", "--schedule", "/tmp/celerybeat-schedule"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-app-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-app-secrets
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            {{- toYaml .Values.celery.beat.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      {{- with .Values.celery.beat.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.celery.beat.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.celery.beat.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

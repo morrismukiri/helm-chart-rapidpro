@@ -145,37 +145,71 @@ Create smtp url from values
 {{- printf "smtp://%s:%s@%s:%v" .Values.smtp.username .Values.smtp.password .Values.smtp.host .Values.smtp.port -}}
 {{- end }}
 
-{{/* database URL
-*/}}
+{{/* Database URL. Bundled = hand-rolled PostGIS service; else external. */}}
 {{- define "rapidpro.databaseUrl" -}}
-{{- if .Values.postgresql.enabled }}
-{{- printf "postgres://%s:%s@%s-%s:%v/%s" "postgres" .Values.postgresql.auth.postgresPassword (include "rapidpro.fullname" . ) "postgresql" .Values.postgresql.service.port .Values.postgresql.auth.database -}}
-{{- else }}
-{{-  printf "%s" .Values.externalPostgresqlUrl -}}
+{{- if .Values.postgresql.enabled -}}
+{{- printf "postgres://%s:%s@%s-postgresql:%v/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "rapidpro.fullname" .) (.Values.postgresql.service.port | default 5432) .Values.postgresql.auth.database -}}
+{{- else -}}
+{{- .Values.externalPostgresqlUrl -}}
+{{- end -}}
 {{- end }}
+
+{{/* Read-only Database URL. Empty unless an external replica is configured;
+     the app settings fall back to the primary when this is empty. */}}
+{{- define "rapidpro.databaseUrlReadonly" -}}
+{{- .Values.externalPostgresqlReadonlyUrl | default "" -}}
 {{- end }}
 
+{{/* Broker/cache base service host (hand-rolled redis OR valkey). */}}
+{{- define "rapidpro.brokerService" -}}
+{{- printf "%s-broker" (include "rapidpro.fullname" .) -}}
+{{- end }}
 
-{{/* Redis URL
-
-*/}}
-
+{{/* App/celery broker+cache URL (db 15). */}}
 {{- define "rapidpro.redisUrl" -}}
-{{- if .Values.redis.enabled }}
-{{- printf "redis://%s-redis-master:%v/15" ( include "rapidpro.fullname" . )  .Values.redis.service.port -}}
-{{- else }}
-{{- printf "%s" .Values.externalRedisUrl -}}
+{{- if .Values.redis.enabled -}}
+{{- printf "redis://%s:%v/%v" (include "rapidpro.brokerService" .) (.Values.redis.service.port | default 6379) (.Values.broker.appDb | default 15) -}}
+{{- else -}}
+{{- .Values.externalRedisUrl -}}
+{{- end -}}
 {{- end }}
+
+{{/* Mailroom broker URL (db 11 by convention). */}}
+{{- define "rapidpro.mailroomRedisUrl" -}}
+{{- if .Values.mailroom.redisUrl -}}
+{{- .Values.mailroom.redisUrl -}}
+{{- else if .Values.redis.enabled -}}
+{{- printf "redis://%s:%v/%v" (include "rapidpro.brokerService" .) (.Values.redis.service.port | default 6379) (.Values.broker.mailroomDb | default 11) -}}
+{{- else -}}
+{{- .Values.externalRedisUrl -}}
+{{- end -}}
 {{- end }}
 
-{{/* Elasticsearch URL
+{{/* Courier broker URL (db 12 by convention). */}}
+{{- define "rapidpro.courierRedisUrl" -}}
+{{- if .Values.courier.redisUrl -}}
+{{- .Values.courier.redisUrl -}}
+{{- else if .Values.redis.enabled -}}
+{{- printf "redis://%s:%v/%v" (include "rapidpro.brokerService" .) (.Values.redis.service.port | default 6379) (.Values.broker.courierDb | default 12) -}}
+{{- else -}}
+{{- .Values.externalRedisUrl -}}
+{{- end -}}
+{{- end }}
 
-*/}}
-
+{{/* Elasticsearch URL. Bundled = hand-rolled single node; else external. */}}
 {{- define "rapidpro.elasticsearchUrl" -}}
-{{- if .Values.elasticsearch.enabled }}
-{{- printf "http://%s-elasticsearch:%v" (include "rapidpro.fullname" . ) .Values.elasticsearch.service.port -}}
-{{- else }}
-{{- printf "%s" .Values.externalElasticsearchUrl -}}
+{{- if .Values.elasticsearch.enabled -}}
+{{- printf "http://%s-elasticsearch:%v" (include "rapidpro.fullname" .) (.Values.elasticsearch.service.port | default 9200) -}}
+{{- else -}}
+{{- .Values.externalElasticsearchUrl -}}
+{{- end -}}
 {{- end }}
+
+{{/* Broker image (redis or valkey) for the hand-rolled dev/staging broker. */}}
+{{- define "rapidpro.brokerImage" -}}
+{{- if eq (.Values.broker.engine | default "redis") "valkey" -}}
+{{- printf "%s:%s" (.Values.broker.valkeyRepository | default "valkey/valkey") (.Values.broker.valkeyTag | default "8.1-alpine") -}}
+{{- else -}}
+{{- printf "%s:%s" (.Values.broker.redisRepository | default "redis") (.Values.broker.redisTag | default "7.2-alpine") -}}
+{{- end -}}
 {{- end }}

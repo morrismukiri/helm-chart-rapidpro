@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-mailroom
+  labels:
+    app.kubernetes.io/component: mailroom
+    {{- include "mailroom.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.mailroom.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mailroom
+      {{- include "mailroom.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: mailroom
+        {{- include "mailroom.selectorLabels" . | nindent 8 }}
+      {{- with .Values.mailroom.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
+      {{- with .Values.mailroom.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.mailroom.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}-mailroom
+          image: "{{ .Values.mailroom.image.repository }}:{{ .Values.mailroom.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.mailroom.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mailroom.service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-mailroom-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-mailroom-secrets
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: storage, mountPath: /var/spool/mailroom }
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.mailroom.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: storage, emptyDir: {} }
+      {{- with .Values.mailroom.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mailroom.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mailroom.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.mailroom.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-mailroom
+  labels:
+    {{- include "mailroom.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rapidpro.fullname" . }}-mailroom
+  minReplicas: {{ .Values.mailroom.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.mailroom.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.mailroom.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.mailroom.autoscaling.targetCPUUtilizationPercentage }} }
+    {{- end }}
+    {{- if .Values.mailroom.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: {{ .Values.mailroom.autoscaling.targetMemoryUtilizationPercentage }} }
+    {{- end }}
+{{- end }}
+{{- if .Values.mailroom.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-mailroom
+  labels:
+    {{- include "mailroom.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.mailroom.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mailroom
+      {{- include "mailroom.selectorLabels" . | nindent 6 }}
+{{- end }}

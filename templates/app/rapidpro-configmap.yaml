@@ -7,19 +7,29 @@ metadata:
 data:
   DOMAIN_NAME: {{ .Values.rapidproDomain | quote }}
   TEMBA_HOST: {{ .Values.rapidproDomain | quote }}
+  ALLOWED_HOSTS: {{ .Values.rapidproDomain | quote }}
+  {{- with .Values.csrfTrustedOrigins }}
+  CSRF_TRUSTED_ORIGINS: {{ . | quote }}
+  {{- end }}
   MAILROOM_URL: "http://{{ include "rapidpro.fullname" . }}-mailroom:{{ .Values.mailroom.service.port }}"
+  # One-time setup is owned by the migrate hook Job + baked static (defaults off).
   MANAGEPY_COLLECTSTATIC: {{ .Values.rapidpro.runCollectstatic | quote }}
   MANAGEPY_INIT_DB: {{ .Values.rapidpro.initDb | quote }}
   MANAGEPY_MIGRATE: {{ .Values.rapidpro.runMigrations | quote }}
   MANAGEPY_COMPRESS: {{ .Values.rapidpro.runCompress | quote }}
   CLEAR_COMPRESSOR_CACHE: {{ .Values.rapidpro.clearCompressorCache | quote }}
+  # Object storage
   AWS_STORAGE_BUCKET_NAME: {{ .Values.awsStorageBucketName | quote }}
   AWS_S3_REGION_NAME: {{ .Values.awsS3RegionName | quote }}
-  AWS_ACCESS_KEY_ID: {{ .Values.awsAccessKeyId | quote }}
+  AWS_S3_ENDPOINT_URL: {{ .Values.awsS3Endpoint | quote }}
+  AWS_MEDIA: {{ .Values.awsMedia | quote }}
+  # Email
   EMAIL_HOST: {{ .Values.smtp.host | quote }}
   EMAIL_PORT: {{ .Values.smtp.port | quote }}
   EMAIL_USE_TLS: {{ .Values.smtp.useTls | quote }}
   DEFAULT_FROM_EMAIL: {{ .Values.smtp.defaultFromEmail | quote }}
+  SEND_EMAILS: {{ .Values.smtp.sendEmails | default "off" | quote }}
+  # Broker / cache / search
   REDIS_URL: {{ include "rapidpro.redisUrl" . | quote }}
   ELASTICSEARCH_URL: {{ include "rapidpro.elasticsearchUrl" . | quote }}
 {{- range $key, $value := .Values.rapidpro.extraEnvVars }}
