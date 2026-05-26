@@ -157,7 +157,7 @@ mailroom:
   image:
     repository: docker.io/morrismukiri/mailroom
     pullPolicy: IfNotPresent
-    tag: "v9.3.72"
+    tag: "v9.0.1"   # must match the v9.0.0 app schema (not the 9.3 dev line)
   imagePullSecrets: []
   authToken: ""
   listenAddress: "0.0.0.0"
@@ -191,7 +191,7 @@ courier:
   image:
     repository: docker.io/morrismukiri/courier
     pullPolicy: IfNotPresent
-    tag: "v9.3.44"
+    tag: "v9.0.1"   # match the v9.0.0 app schema
   imagePullSecrets: []
   redisUrl: ""        # empty => derived from the bundled broker (db 12)
   service:
@@ -222,7 +222,7 @@ indexer:
   image:
     repository: docker.io/morrismukiri/rp-indexer
     pullPolicy: IfNotPresent
-    tag: "v9.3.4"
+    tag: "v9.0.0"   # match the v9.0.0 app schema
   imagePullSecrets: []
   resources:
     requests: { cpu: 10m, memory: 32Mi }
@@ -243,7 +243,7 @@ archiver:
   image:
     repository: docker.io/morrismukiri/rp-archiver
     pullPolicy: IfNotPresent
-    tag: "v9.3.9"
+    tag: "v9.0.0"   # match the v9.0.0 app schema
   imagePullSecrets: []
   resources:
     requests: { cpu: 50m, memory: 128Mi }
