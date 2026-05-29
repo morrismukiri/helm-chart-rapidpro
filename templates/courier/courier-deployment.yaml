@@ -35,7 +35,7 @@ spec:
           image: "{{ .Values.courier.image.repository }}:{{ .Values.courier.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.courier.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml .Values.goSecurityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080

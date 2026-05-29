@@ -143,7 +143,10 @@ spec:
   triggers:
     - type: redis
       metadata:
-        addressFromEnv: REDIS_URL
+        # KEDA's redis scaler wants host:port plus databaseIndex, not a redis://
+        # URL. Default to the bundled broker; for external redis set keda.address.
+        address: {{ $w.keda.address | default (printf "%s:%v" (include "rapidpro.brokerService" $root) ($root.Values.redis.service.port | default 6379)) | quote }}
+        databaseIndex: {{ $root.Values.broker.appDb | default 15 | quote }}
         listName: {{ $w.keda.listName | default $w.queues | quote }}
         listLength: {{ $w.keda.listLength | default 5 | quote }}
 {{- end }}

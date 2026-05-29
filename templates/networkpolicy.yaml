@@ -6,10 +6,12 @@ metadata:
   labels:
     {{- include "rapidpro.labels" . | nindent 4 }}
 spec:
-  # Applies to every pod in this release (app, celery, mailroom, courier, deps).
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/instance: {{ .Release.Name }}
+  # Applies to every pod in this namespace. The chart's components use distinct
+  # app.kubernetes.io/instance values (e.g. <release>-mailroom, <release>-courier),
+  # so an instance match would only cover the app. RapidPro runs in its own
+  # namespace, so an empty selector reliably covers app, celery, the Go services,
+  # and the bundled deps.
+  podSelector: {}
   policyTypes:
     - Ingress
     {{- if not .Values.networkPolicy.allowExternalEgress }}

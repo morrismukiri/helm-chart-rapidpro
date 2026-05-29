@@ -35,7 +35,7 @@ spec:
           image: "{{ .Values.mailroom.image.repository }}:{{ .Values.mailroom.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.mailroom.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml .Values.goSecurityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.mailroom.service.targetPort }}
