@@ -1,0 +1,86 @@
+{{- if .Values.elasticsearch.enabled }}
+{{- /* Single-node Elasticsearch 7.17 for dev/staging. discovery.type=single-node
+       skips bootstrap checks (incl. vm.max_map_count), so it runs on kind. */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-elasticsearch
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  type: {{ .Values.elasticsearch.service.type | default "ClusterIP" }}
+  ports:
+    - { name: http, port: {{ .Values.elasticsearch.service.port | default 9200 }}, targetPort: http }
+  selector:
+    {{- include "rapidpro.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-elasticsearch
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  serviceName: {{ include "rapidpro.fullname" . }}-elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: elasticsearch
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: elasticsearch
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # Fresh PVCs mount root-owned; ES (uid 1000) needs its data dir writable.
+        - name: fix-data-permissions
+          image: busybox:1.36
+          command: ["sh", "-c", "chown -R 1000:0 /usr/share/elasticsearch/data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - { name: data, mountPath: /usr/share/elasticsearch/data }
+      containers:
+        - name: elasticsearch
+          image: "{{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}"
+          ports:
+            - { name: http, containerPort: 9200 }
+          env:
+            - { name: discovery.type, value: "single-node" }
+            - { name: xpack.security.enabled, value: "false" }
+            - { name: ES_JAVA_OPTS, value: {{ .Values.elasticsearch.javaOpts | default "-Xms512m -Xmx512m" | quote }} }
+          readinessProbe:
+            httpGet:
+              path: "/_cluster/health?wait_for_status=yellow&timeout=1s"
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 12
+          resources:
+            {{- toYaml .Values.elasticsearch.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /usr/share/elasticsearch/data }
+  {{- if .Values.elasticsearch.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.elasticsearch.persistence.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.elasticsearch.persistence.size | default "20Gi" }}
+  {{- else }}
+      volumes:
+        - { name: data, emptyDir: {} }
+  {{- end }}
+{{- end }}

@@ -6,9 +6,7 @@ metadata:
   labels:
     {{- include "archiver.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.archiver.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
-  {{- end }}
+  replicas: {{ .Values.archiver.replicas | default 1 }}
   selector:
     matchLabels:
       {{- include "archiver.selectorLabels" . | nindent 6 }}
@@ -31,7 +29,7 @@ spec:
       containers:
         - name: {{ .Chart.Name }}-archiver
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml .Values.goSecurityContext | nindent 12 }}
           image: "{{ .Values.archiver.image.repository }}:{{ .Values.archiver.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.archiver.image.pullPolicy }}
           envFrom:

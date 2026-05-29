@@ -1,0 +1,106 @@
+# Local kind overlay: single replicas, small requests, bundled deps + in-cluster
+# MinIO for S3. Install with: helm install rapidpro . -f values-local.yaml
+# (release name "rapidpro" keeps fullname == "rapidpro" so service names are simple).
+replicaCount: 1
+
+rapidproDomain: "rapidpro.local"
+
+# S3 via in-cluster MinIO.
+awsAccessKeyId: "minio"
+awsSecretAccessKey: "minio12345"
+awsStorageBucketName: "rapidpro"
+awsS3Endpoint: "http://rapidpro-minio:9000"
+awsS3RegionName: "us-east-1"
+awsMedia: "True"
+
+rapidpro:
+  image:
+    pullPolicy: IfNotPresent
+  secretKey: "local-dev-not-secret"
+  gunicorn: { workers: 2, threads: 2, timeout: 30, maxRequests: 1000, maxRequestsJitter: 100 }
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  autoscaling: { enabled: false }
+  pdb: { enabled: false }
+
+celery:
+  beat:
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 384Mi }
+  workers:
+    - name: default
+      queues: "celery"
+      concurrency: 2
+      autoscaling: { enabled: false }
+      pdb: { enabled: false }
+      keda: { enabled: false }
+      resources:
+        requests: { cpu: 50m, memory: 256Mi }
+        limits: { memory: 768Mi }
+    - name: exports
+      queues: "exports"
+      concurrency: 1
+      autoscaling: { enabled: false }
+      pdb: { enabled: false }
+      keda: { enabled: false }
+      resources:
+        requests: { cpu: 50m, memory: 256Mi }
+        limits: { memory: 768Mi }
+
+mailroom:
+  image: { pullPolicy: IfNotPresent }
+  authToken: "local-dev-token"
+  autoscaling: { enabled: false }
+  pdb: { enabled: false }
+  resources:
+    requests: { cpu: 25m, memory: 96Mi }
+    limits: { memory: 512Mi }
+
+courier:
+  image: { pullPolicy: IfNotPresent }
+  autoscaling: { enabled: false }
+  pdb: { enabled: false }
+  resources:
+    requests: { cpu: 10m, memory: 64Mi }
+    limits: { memory: 384Mi }
+
+indexer:
+  image: { pullPolicy: IfNotPresent }
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+archiver:
+  enabled: false
+
+# Bundled deps (emptyDir, no persistence for fast ephemeral kind runs).
+broker:
+  engine: redis
+  persistence: { enabled: false }
+  resources:
+    requests: { cpu: 25m, memory: 96Mi }
+    limits: { memory: 512Mi }
+
+postgresql:
+  enabled: true
+  persistence: { enabled: false }
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+redis:
+  enabled: true
+
+elasticsearch:
+  enabled: true
+  javaOpts: "-Xms256m -Xmx256m"
+  persistence: { enabled: false }
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+minio:
+  enabled: true
+  persistence: { enabled: false }

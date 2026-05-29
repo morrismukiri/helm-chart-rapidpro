@@ -1,0 +1,87 @@
+{{- $img := printf "%s:%s" .Values.rapidpro.image.repository (.Values.rapidpro.image.tag | default .Chart.AppVersion) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-migrate
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # post-install so bundled deps exist on first install; pre-upgrade so the DB
+    # is migrated before the new app rolls out on upgrades.
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.rapidpro.migrateJob.backoffLimit | default 6 }}
+  activeDeadlineSeconds: {{ .Values.rapidpro.migrateJob.activeDeadlineSeconds | default 3600 }}
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
+      {{- with .Values.rapidpro.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.rapidpro.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-db
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.rapidpro.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-app-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-app-secrets
+          command: ["python", "-c"]
+          args:
+            - |
+              import os, time, sys, dj_database_url, psycopg
+              c = dj_database_url.parse(os.environ["DATABASE_URL"])
+              for i in range(120):
+                  try:
+                      psycopg.connect(host=c["HOST"], port=c.get("PORT") or 5432, user=c["USER"],
+                                      password=c["PASSWORD"], dbname=c["NAME"], connect_timeout=3).close()
+                      print("database is ready"); sys.exit(0)
+                  except Exception as e:
+                      print("waiting for database:", e); time.sleep(2)
+              sys.exit(1)
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: migrate
+          image: {{ $img | quote }}
+          imagePullPolicy: {{ .Values.rapidpro.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-app-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-app-secrets
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              {{- if eq .Values.rapidpro.initDb "on" }}
+              echo "running init_db.sql"
+              echo "*:*:*:*:$(echo "$DATABASE_URL" | cut -d'@' -f1 | cut -d':' -f3)" > /tmp/.pgpass
+              chmod 600 /tmp/.pgpass
+              PGPASSFILE=/tmp/.pgpass python manage.py dbshell < /rapidpro/init_db.sql || true
+              {{- end }}
+              python manage.py migrate --noinput
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      {{- with .Values.rapidpro.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

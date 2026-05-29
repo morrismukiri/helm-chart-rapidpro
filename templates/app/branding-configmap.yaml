@@ -1,0 +1,15 @@
+{{- if .Values.branding.enabled }}
+{{- /* Optional branding overlays (logo, templates) mounted into the app via
+       subPath, so a deployment can rebrand without rebuilding the image. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-branding
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+data:
+{{- range .Values.branding.files }}
+  {{ .key }}: |-
+{{ .content | indent 4 }}
+{{- end }}
+{{- end }}

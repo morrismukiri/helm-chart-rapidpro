@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-app
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  {{- if not .Values.rapidpro.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- with .Values.rapidpro.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "rapidpro.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+      {{- with .Values.rapidpro.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
+      {{- with .Values.rapidpro.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.rapidpro.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}-app
+          image: "{{ .Values.rapidpro.image.repository }}:{{ .Values.rapidpro.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.rapidpro.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.rapidpro.service.targetPort }}
+              protocol: TCP
+          env:
+            - { name: GUNICORN_WORKERS, value: {{ .Values.rapidpro.gunicorn.workers | quote }} }
+            - { name: GUNICORN_THREADS, value: {{ .Values.rapidpro.gunicorn.threads | quote }} }
+            - { name: GUNICORN_TIMEOUT, value: {{ .Values.rapidpro.gunicorn.timeout | quote }} }
+            - { name: GUNICORN_MAX_REQUESTS, value: {{ .Values.rapidpro.gunicorn.maxRequests | quote }} }
+            - { name: GUNICORN_MAX_REQUESTS_JITTER, value: {{ .Values.rapidpro.gunicorn.maxRequestsJitter | quote }} }
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-app-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-app-secrets
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: dshm, mountPath: /dev/shm }
+            {{- if .Values.branding.enabled }}
+            {{- range .Values.branding.files }}
+            - name: branding
+              mountPath: {{ .mountPath }}
+              subPath: {{ .key }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - { name: Host, value: {{ .Values.rapidproDomain | quote }} }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+              httpHeaders:
+                - { name: Host, value: {{ .Values.rapidproDomain | quote }} }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.rapidpro.resources | nindent 12 }}
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: dshm, emptyDir: { medium: Memory } }
+        {{- if .Values.branding.enabled }}
+        - name: branding
+          configMap:
+            name: {{ include "rapidpro.fullname" . }}-branding
+        {{- end }}
+      {{- with .Values.rapidpro.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.rapidpro.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.rapidpro.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.rapidpro.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-app
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rapidpro.fullname" . }}-app
+  minReplicas: {{ .Values.rapidpro.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.rapidpro.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.rapidpro.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.rapidpro.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.rapidpro.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.rapidpro.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+{{- if .Values.rapidpro.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-app
+  labels:
+    {{- include "rapidpro.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.rapidpro.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "rapidpro.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+{{- end }}

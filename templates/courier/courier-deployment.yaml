@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-courier
+  labels:
+    app.kubernetes.io/component: courier
+    {{- include "courier.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.courier.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: courier
+      {{- include "courier.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: courier
+        {{- include "courier.selectorLabels" . | nindent 8 }}
+      {{- with .Values.courier.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "rapidpro.serviceAccountName" . }}
+      {{- with .Values.courier.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.courier.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}-courier
+          image: "{{ .Values.courier.image.repository }}:{{ .Values.courier.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.courier.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.goSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "rapidpro.fullname" . }}-courier-config
+            - secretRef:
+                name: {{ include "rapidpro.fullname" . }}-courier-secrets
+          volumeMounts:
+            - { name: spool, mountPath: {{ .Values.courier.spoolDirectory | quote }} }
+            - { name: tmp, mountPath: /tmp }
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.courier.resources | nindent 12 }}
+      volumes:
+        - { name: spool, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+      {{- with .Values.courier.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.courier.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.courier.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.courier.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-courier
+  labels:
+    {{- include "courier.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "rapidpro.fullname" . }}-courier
+  minReplicas: {{ .Values.courier.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.courier.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.courier.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.courier.autoscaling.targetCPUUtilizationPercentage }} }
+    {{- end }}
+{{- end }}
+{{- if .Values.courier.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "rapidpro.fullname" . }}-courier
+  labels:
+    {{- include "courier.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.courier.pdb.minAvailable | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: courier
+      {{- include "courier.selectorLabels" . | nindent 6 }}
+{{- end }}
